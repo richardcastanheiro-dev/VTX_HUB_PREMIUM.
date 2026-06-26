@@ -263,6 +263,8 @@ local Players = game:GetService("Players")
 
 local kickedPlayers = 0
 local label = RightGroup:AddLabel("Kicks: 0")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
 
 Players.PlayerRemoving:Connect(function(player)
     kickedPlayers += 1
@@ -284,12 +286,15 @@ RightGroup:AddLabel("Current time: " .. os.date("%H:%M"))
 RightGroup:AddLabel("Script version: v2.0")
 
 
+
 task.spawn(function()
     while task.wait(1) do
         elapsedTime += 1
         ElapsedLabel:Set("Elapsed time: " .. elapsedTime .. " seconds")
     end
 end)
+
+
 
 
 RightGroup:AddButton({
@@ -305,7 +310,6 @@ RightGroup:AddButton({
         game:GetService("TeleportService"):Teleport(game.PlaceId)
     end
 })
-
 
 local Tabs = {
 	Main = Window:AddTab("Main"),
@@ -447,89 +451,189 @@ box:AddToggle("ViewPCLD", {
     Text = "View PCLD (Bordas Rainbow)",
     Default = false,
     Callback = function(v)
+        local cons = cons or {}
+
         if v then
-            local trans = Options.PCLDTransparency.Value or 0.8
-            
-            local activePCLDs = {}
-            local adornments = {}  -- Para guardar as bordas
-            
+            local trans = Options.PCLDTransparency and Options.PCLDTransparency.Value or 0.2
+            local RunService = game:GetService("RunService")
+            local adornments = {}
+            local hue = 0
+
+            -- Função mais direta e rápida
             local function AddBorders(obj)
-                if obj.Name == "PlayerCharacterLocationDetector" and obj:IsA("BasePart") then
-                    -- Deixa o part quase invisível
+                if obj.Name == "PlayerCharacterLocationDetector" and obj:IsA("BasePart") and not obj:FindFirstChild("PCLD_Borders") then
                     obj.Transparency = 1
                     obj.Material = Enum.Material.SmoothPlastic
-                    
-                    -- Cria bordas coloridas
+
                     local selection = Instance.new("SelectionBox")
                     selection.Name = "PCLD_Borders"
                     selection.Adornee = obj
-                    selection.LineThickness = 0.05
+                    selection.LineThickness = 0.06
                     selection.Transparency = trans
                     selection.Color3 = Color3.fromRGB(255, 0, 255)
                     selection.Parent = obj
-                    
-                    table.insert(activePCLDs, obj)
-                    table.insert(adornments, selection)
+
+                    adornments[#adornments + 1] = selection
                 end
             end
 
-            -- Aplicar nos existentes
-            for _, v in pairs(workspace:GetChildren()) do
-                AddBorders(v)
+            -- Aplica rápido nos já existentes
+            for _, child in ipairs(workspace:GetChildren()) do
+                AddBorders(child)
             end
 
-            -- Novos PCLDs
-            cons["viewpcld"] = workspace.ChildAdded:Connect(function(child)
-                AddBorders(child)
-            end)
+            -- Detecta novos imediatamente
+            cons["viewpcld"] = workspace.ChildAdded:Connect(AddBorders)
 
-            -- === EFEITO ARCO-ÍRIS NAS BORDAS ===
-            local RunService = game:GetService("RunService")
-            local hue = 0
-
+            -- Atualização mais fluida e rápida de acompanhamento
             cons["rainbow"] = RunService.Heartbeat:Connect(function()
-                hue = (hue + 0.018) % 1
-                
-                local color = Color3.fromHSV(hue, 1, 1)
-                
+                hue = (hue + 0.018) % 1 -- ← Mantive a velocidade original das cores
+                local rainbowColor = Color3.fromHSV(hue, 1, 1)
+
+                -- Verificação mais ágil para não perder objetos
                 for i = #adornments, 1, -1 do
                     local sb = adornments[i]
-                    if sb and sb.Parent then
-                        sb.Color3 = color
+                    if sb and sb.Adornee and sb.Adornee.Parent then
+                        sb.Color3 = rainbowColor
                     else
+                        if sb then sb:Destroy() end
+                        adornments[i] = nil
                         table.remove(adornments, i)
                     end
                 end
             end)
 
         else
-            -- Desligar
-            if cons["viewpcld"] then 
-                cons["viewpcld"]:Disconnect() 
-                cons["viewpcld"] = nil 
-            end
-            if cons["rainbow"] then 
-                cons["rainbow"]:Disconnect() 
-                cons["rainbow"] = nil 
-            end
+            -- Desliga e limpa de forma instantânea
+            if cons["viewpcld"] then cons["viewpcld"]:Disconnect() cons["viewpcld"] = nil end
+            if cons["rainbow"] then cons["rainbow"]:Disconnect() cons["rainbow"] = nil end
 
-            -- Limpar bordas
-            for _, v in pairs(workspace:GetChildren()) do
-                if v.Name == "PlayerCharacterLocationDetector" then
-                    v.Transparency = 1
-                    local border = v:FindFirstChild("PCLD_Borders")
+            for _, part in ipairs(workspace:GetChildren()) do
+                if part.Name == "PlayerCharacterLocationDetector" and part:IsA("BasePart") then
+                    local border = part:FindFirstChild("PCLD_Borders")
                     if border then border:Destroy() end
+                    part.Transparency = 1
                 end
             end
         end
     end
 })
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local rainbowConnections = {} -- Controla a animação do arco-íris
+
+-- Função para gerar cor do arco-íris
+local function GetRainbowColor()
+    local tempo = os.clock() * 1 -- Velocidade: 1 = devagar, 2 = normal, 3 = rápido
+    return Color3.fromHSV(tempo % 1, 1, 1)
+end
+
+local function AddESP(plr)
+    if plr == Players.LocalPlayer then return end
+
+    local function Apply(char)
+        -- Evita duplicar elementos
+        if char:FindFirstChild("VTX_ESP") or char:FindFirstChild("VTX_NameESP") then return end
+
+        -- Contorno com efeito arco-íris
+        local hl = Instance.new("Highlight")
+        hl.Name = "VTX_ESP"
+        hl.FillTransparency = 1
+        hl.OutlineTransparency = 0
+        hl.OutlineColor = GetRainbowColor()
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.Parent = char
+
+        -- Nome com parênteses, branco normal, acima da cabeça
+        local head = char:FindFirstChild("Head")
+        if head then
+            local bill = Instance.new("BillboardGui")
+            bill.Name = "VTX_NameESP"
+            bill.Size = UDim2.new(0, 120, 0, 50) -- Ajustado para caber os parênteses
+            bill.StudsOffset = Vector3.new(0, 3.5, 0) -- Bem acima da cabeça
+            bill.AlwaysOnTop = true
+            bill.MaxDistance = 3000 -- Alcance grande
+            bill.Parent = head
+
+            local txt = Instance.new("TextLabel")
+            txt.Size = UDim2.new(1, 0, 1, 0)
+            txt.BackgroundTransparency = 1
+            txt.Text = "(" .. plr.Name .. ")" -- Formato com parênteses
+            txt.TextColor3 = Color3.fromRGB(255, 255, 255) -- Branco fixo
+            txt.TextStrokeTransparency = 0
+            txt.TextStrokeColor3 = Color3.new(0, 0, 0) -- Borda preta para legibilidade
+            txt.TextScaled = true
+            txt.Font = Enum.Font.SourceSansBold
+            txt.AnchorPoint = Vector2.new(0.5, 0.5)
+            txt.Position = UDim2.new(0.5, 0, 0.5, 0)
+            txt.Parent = bill
+        end
+
+        -- Animação apenas do contorno
+        local conn = RunService.RenderStepped:Connect(function()
+            if not hl:IsDescendantOf(game) then
+                conn:Disconnect()
+                rainbowConnections[char] = nil
+                return
+            end
+            hl.OutlineColor = GetRainbowColor()
+        end)
+
+        rainbowConnections[char] = conn
+    end
+
+    -- Aplica se o personagem já existir
+    if plr.Character then
+        Apply(plr.Character)
+    end
+
+    -- Aplica quando o personagem carregar ou renascer
+    plr.CharacterAdded:Connect(Apply)
+end
+
+local function RemoveESP()
+    -- Para todas as animações
+    for char, conn in pairs(rainbowConnections) do
+        conn:Disconnect()
+    end
+    rainbowConnections = {}
+
+    -- Remove todos os elementos visuais
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Character then
+            local esp = plr.Character:FindFirstChild("VTX_ESP")
+            if esp then esp:Destroy() end
+
+            local head = plr.Character:FindFirstChild("Head")
+            if head then
+                local nameesp = head:FindFirstChild("VTX_NameESP")
+                if nameesp then nameesp:Destroy() end
+            end
+        end
+    end
+end
+
+-- 🔹 AQUI: Detecta jogadores que entrarem a qualquer momento
+Players.PlayerAdded:Connect(function(novoJogador)
+    task.spawn(function() -- Evita travar se houver atraso no carregamento
+        novoJogador.CharacterAdded:Wait() -- Espera o personagem dele aparecer
+        if _G.ESPAtivado then -- Se o ESP estiver ligado, aplica automaticamente
+            AddESP(novoJogador)
+        end
+    end)
+end)
+
+-- Botão de ativar/desativar
 box:AddToggle("PlayerESP", {
     Text = "Player ESP",
     Default = false,
-    Callback = function(v)
-        if v then
-            for _, plr in ipairs(game.Players:GetPlayers()) do
+    Callback = function(ativado)
+        _G.ESPAtivado = ativado -- Guarda o estado atual
+
+        if ativado then
+            -- Aplica em todos que já estão na sala
+            for _, plr in ipairs(Players:GetPlayers()) do
                 AddESP(plr)
             end
         else
@@ -981,6 +1085,86 @@ box:AddButton({
         end
     end
 })
+box:AddButton({
+    Text = "Spawn Boat",
+    Callback = function()
+        local Players = game:GetService("Players")
+        local player = Players.LocalPlayer
+        local character = player.Character or player.CharacterAdded:Wait()
+        local root = character:WaitForChild("HumanoidRootPart")
+
+        -- COORDENADAS EXATAS QUE VOCÊ PEDIU
+        local posicaoDesejada = CFrame.new(-907.91, -1.13, 5.70)
+        local spawnCFrame = posicaoDesejada -- Agora usa a posição fixa, não mais ligada ao jogador
+
+        local boat = Instance.new("Model")
+        boat.Name = "BigBoat"
+        boat.Parent = workspace
+
+        local function createPart(size, cf, color)
+            local p = Instance.new("Part")
+            p.Size = size
+            p.CFrame = cf
+            p.Material = Enum.Material.WoodPlanks
+            p.Color = color
+            p.Anchored = false
+            p.TopSurface = Enum.SurfaceType.Smooth
+            p.BottomSurface = Enum.SurfaceType.Smooth
+            p.Parent = boat
+            return p
+        end
+
+        local wood = Color3.fromRGB(105, 70, 40)
+
+        -- Base
+        local base = createPart(Vector3.new(30, 2, 12), spawnCFrame, wood)
+
+        -- Laterais
+        createPart(Vector3.new(30, 3, 1), spawnCFrame * CFrame.new(0, 3, -5.5), wood)
+        createPart(Vector3.new(30, 3, 1), spawnCFrame * CFrame.new(0, 3, 5.5), wood)
+
+        -- Frente
+        createPart(Vector3.new(2, 3, 12), spawnCFrame * CFrame.new(15, 3, 0), wood)
+
+        -- Traseira
+        createPart(Vector3.new(2, 3, 12), spawnCFrame * CFrame.new(-15, 3, 0), wood)
+
+        -- Piso
+        createPart(Vector3.new(26, 1, 10), spawnCFrame * CFrame.new(0, 1.5, 0), Color3.fromRGB(120, 80, 50))
+
+
+        -- Vela (mastro)
+        local mast = createPart(Vector3.new(1, 28, 1), spawnCFrame * CFrame.new(0, 15, 0), Color3.fromRGB(80, 50, 25))
+
+        -- Vela (tecido)
+        local sail = Instance.new("Part")
+        sail.Size = Vector3.new(0.2, 15, 8)
+        sail.CFrame = spawnCFrame * CFrame.new(2.5, 20, 0)
+        sail.Material = Enum.Material.Fabric
+        sail.Color = Color3.fromRGB(240, 240, 230)
+        sail.Anchored = false
+        sail.CanCollide = false
+        sail.Parent = boat
+
+        -- Soldar tudo na base
+        for _, obj in ipairs(boat:GetChildren()) do
+            if obj:IsA("BasePart") and obj ~= base then
+                local weld = Instance.new("WeldConstraint")
+                weld.Part0 = base
+                weld.Part1 = obj
+                weld.Parent = base
+            end
+        end
+
+        boat.PrimaryPart = base
+
+        for _, obj in ipairs(boat:GetChildren()) do
+            if obj:IsA("BasePart") then
+                obj.Massless = false
+            end
+        end
+    end
+})
 
 
 local Players = game:GetService("Players")
@@ -1026,9 +1210,6 @@ box:AddToggle("AntiGrab",{
         end
     end
 })
-
-
-
 
 
 local SoundService = game:GetService("SoundService")
@@ -1096,6 +1277,8 @@ Workspace.ChildAdded:Connect(function(obj)
 		notifyKick(plr.DisplayName, plr.Name)
 	end
 end)
+
+
 
 
 do
@@ -1394,6 +1577,8 @@ do
     end)
 end
 
+
+
 box:AddToggle("AutoReset", {
     Text = "Auto Reset",
     Default = false,
@@ -1401,7 +1586,7 @@ box:AddToggle("AutoReset", {
         if v then
             cons["Auto Reset Running"] = rs.GameCorrectionEvents.GameCorrectionsNotify.OnClientEvent:Connect(function(r)
                 if r == "Flying" then
-                    Library:Notify("Reset", 4)
+                    Library:Notify("Auto Reset Running", 4)
                     hum:ChangeState("Dead")
                 end
             end)
@@ -2025,7 +2210,7 @@ box:AddToggle("AntiKick", {
                             wait(0.1)
                         until not getgenv().AntiKickEnabled or not plr.Character or not plr.Character:FindFirstChild("Humanoid") or not kunai or not kunai:FindFirstChild("StickyPart") or not kunai.StickyPart:FindFirstChild("StickyWeld") or not kunai.StickyPart.StickyWeld.Part1
                         
-                        if not kunai or not kunai:FindFirstChild("StickyPart") or (plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health <= 0) or not kunai["StickyPart"]:FindFirstChild("StickyWeld").Part1 then 
+                        if not kunai or not kunai:FindFirstChild("StickyPrt") or (plr.Character and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health <= 0) or not kunai["StickyPart"]:FindFirstChild("StickyWeld").Part1 then 
                             ClearKunai()
                         end
                     end)
@@ -2219,7 +2404,6 @@ box:AddToggle("AntiKick", {
         end
     end,
 })
-
 box:AddToggle("LoopTp", {
     Text = "Loop Tp",
     Default = false,
@@ -2245,86 +2429,161 @@ box:AddToggle("LoopTp", {
 box:AddToggle("AntiBurn", {
     Text = "Anti Burn",
     Default = false,
-    Callback = function(v)
-        if v then
-			antiburn1 = plr.CharacterAdded:Connect(function(ch)
-				if antiburn then
-					antiburn:Disconnect()
-                end
-				antiburn = ch:WaitForChild("Humanoid", 0.5).FireDebounce.Changed:Connect(function()
-					if ch:WaitForChild("Humanoid", 0.5).FireDebounce.Value == true then
-                        local bar = workspace.Plots.Plot1.Barrier.PlotBarrier
-                        local pos = bar.CFrame
-						task.spawn(function()
-							repeat task.wait() bar.CFrame = HRP.CFrame until not hum.FireDebounce.Value
-						end)
-                        task.wait(1)
-                        ch:WaitForChild("Humanoid", 0.5).FireDebounce.Value = false
-                        task.wait()
-                        bar.CFrame = pos
-                    end
-                end)
-            end)
-            antiburn = plr.Character.Humanoid.FireDebounce.Changed:Connect(function()
-                if plr.Character.Humanoid.FireDebounce.Value == true then
-                    local bar = workspace.Plots.Plot1.Barrier.PlotBarrier
-                    local pos = bar.CFrame
-					task.spawn(function()
-                    	repeat task.wait() bar.CFrame = HRP.CFrame until not hum.FireDebounce.Value
-					end)
-                    task.wait(1)
-                    plr.Character.Humanoid.FireDebounce.Value = false
-                    task.wait()
-                    bar.CFrame = pos
-                end
-            end)
-        else
+    Callback = function(state)
+        
+        if not state then
             if antiburn then antiburn:Disconnect() end
             if antiburn1 then antiburn1:Disconnect() end
+            if antiburnLoop then antiburnLoop:Disconnect() end
+            return
         end
+
+        local plr = game.Players.LocalPlayer
+        local character = plr.Character or plr.CharacterAdded:Wait()
+        local humanoid = character:WaitForChild("Humanoid")
+        local hrp = character:WaitForChild("HumanoidRootPart")
+
+        local barrier = workspace:FindFirstChild("Plots", true) 
+                     and workspace.Plots:FindFirstChild("Plot1") 
+                     and workspace.Plots.Plot1.Barrier:FindFirstChild("PlotBarrier")
+
+        local originalCFrame = barrier and barrier.CFrame
+
+        local function handleFireDebounce(hum)
+            if hum.FireDebounce.Value == true then
+                task.spawn(function()
+                    if barrier then
+                        local startTime = tick()
+                        repeat
+                            barrier.CFrame = hrp.CFrame * CFrame.new(0, 0, 0) 
+                            task.wait()
+                        until not hum.FireDebounce.Value or (tick() - startTime > 5)
+                        
+                        task.wait(0.5)
+                        hum.FireDebounce.Value = false
+                    else
+                        
+                        hum.FireDebounce.Value = false
+                    end
+                    
+                    
+                    if barrier and originalCFrame then
+                        barrier.CFrame = originalCFrame
+                    end
+                end)
+            end
+        end
+
+        
+        antiburn = humanoid.FireDebounce.Changed:Connect(function()
+            handleFireDebounce(humanoid)
+        end)
+
+        
+        antiburn1 = plr.CharacterAdded:Connect(function(newChar)
+            character = newChar
+            humanoid = newChar:WaitForChild("Humanoid")
+            hrp = newChar:WaitForChild("HumanoidRootPart")
+            
+            if antiburn then antiburn:Disconnect() end
+            
+            antiburn = humanoid.FireDebounce.Changed:Connect(function()
+                handleFireDebounce(humanoid)
+            end)
+        end)
+
+        
+        antiburnLoop = game:GetService("RunService").Heartbeat:Connect(function()
+            if humanoid and humanoid.FireDebounce.Value == true then
+                handleFireDebounce(humanoid)
+            end
+        end)
     end
 })
 
 local box = Tabs.Defence:AddRightGroupbox("More")
+
 box:AddToggle("AntiBlobman", {
     Text = "Anti Blobman",
     Default = false,
-    Callback = function(v)
-        if v then
-            for i,v in pairs(workspace:GetDescendants()) do
-                if v.Name == "CreatureBlobman" and not v:IsDescendantOf(inv) then 
-                    local rd, ld = v:FindFirstChild("RightDetector") or v:WaitForChild("RightDetector", 3), v:FindFirstChild("LeftDetector") or v:WaitForChild("LeftDetector", 3)
-                    if rd and ld then 
-                        rd.RightAlignOrientation.Enabled = false
-                        rd.RightWeld.Enabled = false
-                        ld.LeftAlignOrientation.Enabled = false
-                        ld.LeftWeld.Enabled = false
+    Callback = function(state)
+        if not state then
+            if cons["antiblob"] then cons["antiblob"]:Disconnect() end
+            return
+        end
+
+        local function disableBlob(blob)
+            if not blob or not blob:IsA("Model") or blob.Name ~= "CreatureBlobman" then return end
+            if inv and blob:IsDescendantOf(inv) then return end
+
+            
+            local rd = blob:FindFirstChild("RightDetector") or blob:WaitForChild("RightDetector", 2)
+            local ld = blob:FindFirstChild("LeftDetector") or blob:WaitForChild("LeftDetector", 2)
+
+            if rd then
+                for _, obj in pairs(rd:GetDescendants()) do
+                    if obj:IsA("AlignOrientation") or obj:IsA("Weld") or obj:IsA("Motor6D") then
+                        obj.Enabled = false
                     end
                 end
             end
-            cons["antiblob"] = workspace.DescendantAdded:Connect(function(d)
-                if d.Name == "CreatureBlobman" and (not inv or not d:IsDescendantOf(inv)) then 
-                    local rd = d:FindFirstChild("RightDetector") or d:WaitForChild("RightDetector", 3)
-                    local ld = d:FindFirstChild("LeftDetector") or d:WaitForChild("LeftDetector", 3)
 
-                    if rd and ld then
-                        local rao = rd:WaitForChild("RightAlignOrientation", 1)
-                        local rw  = rd:WaitForChild("RightWeld", 1)
-                        local lao = ld:WaitForChild("LeftAlignOrientation", 1)
-                        local lw  = ld:WaitForChild("LeftWeld", 1)
-
-                        if rao then rao.Enabled = false end
-                        if rw  then rw.Enabled  = false end
-                        if lao then lao.Enabled = false end
-                        if lw  then lw.Enabled  = false end
+            if ld then
+                for _, obj in pairs(ld:GetDescendants()) do
+                    if obj:IsA("AlignOrientation") or obj:IsA("Weld") or obj:IsA("Motor6D") then
+                        obj.Enabled = false
                     end
                 end
+            end
+
+            
+            task.spawn(function()
+                
+                for _, v in pairs(blob:GetDescendants()) do
+                    if v:IsA("Attachment") and (v.Name:find("Grab") or v.Name:find("Hold") or v.Name:find("Attach")) then
+                        v:Destroy()
+                    end
+                    if v:IsA("WeldConstraint") or v:IsA("BallSocketConstraint") or v:IsA("HingeConstraint") then
+                        v.Enabled = false
+                    end
+                end
+
+                
+                if blob.PrimaryPart then
+                    blob.PrimaryPart.CanCollide = false
+                end
             end)
-        else
-            if cons["antiblob"] then cons["antiblob"]:Disconnect() end
         end
+
+        
+        for _, v in pairs(workspace:GetDescendants()) do
+            if v.Name == "CreatureBlobman" then
+                disableBlob(v)
+            end
+        end
+
+        
+        cons["antiblob"] = workspace.DescendantAdded:Connect(function(desc)
+            if desc.Name == "CreatureBlobman" then
+                task.wait(0.1) 
+                disableBlob(desc)
+            end
+        end)
+
+        
+        cons["antiblobLoop"] = task.spawn(function()
+            while state do
+                task.wait(3)
+                for _, v in pairs(workspace:GetDescendants()) do
+                    if v.Name == "CreatureBlobman" then
+                        disableBlob(v)
+                    end
+                end
+            end
+        end)
     end
 })
+
 
 box:AddButton("Delete Legs", function()
         if char:FindFirstChild("Left Leg") and char:FindFirstChild("Right Leg") then
@@ -2371,6 +2630,32 @@ box:AddToggle("AntiLag", {
 })
 
 
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local plr = Players.LocalPlayer
+
+local lagger = nil
+local Lines = 0
+local autoantilag = false
+local FPS_LIMITE = 20
+local LINHAS_LIMITE = 200
+
+-- Cálculo de FPS leve e contínuo
+local lastTime = os.clock()
+local frameCount = 0
+local currentFPS = 60
+
+RunService.RenderStepped:Connect(function()
+    frameCount += 1
+    local agora = os.clock()
+    local delta = agora - lastTime
+    if delta >= 0.15 then -- Atualiza FPS rapidamente sem pesar
+        currentFPS = math.clamp(math.floor(frameCount / delta + 0.5), 1, 300)
+        frameCount = 0
+        lastTime = agora
+    end
+end)
+
 local lagger
 box:AddToggle("AutoAntiLag", {
     Text = "Auto Anti Lag",
@@ -2380,12 +2665,12 @@ box:AddToggle("AutoAntiLag", {
         if v then
             task.spawn(function()
                 while autoantilag and task.wait() do
-                    if Lines > 500 then
+                    if Lines > 200 then
                         plr.PlayerScripts.CharacterAndBeamMove.Enabled = false
                         Library:Notify({
                             Title = "Auto Anti Lag",
                             Description = lagger.Name.." Low FPS detected, anti lag enabled",
-                            Time = 4,
+                            Time = 3,
                         })
                         Lines = 0
                     end
@@ -2398,10 +2683,10 @@ box:AddToggle("AutoAntiLag", {
 })
 workspace.DescendantAdded:Connect(function(d)
     if d.Name == "GrabBeam" then
-        Lines += 1
-        lagger = d.Parent.Parent.Parent
-    end
-end)
+            Lines += 1
+            lagger = d.Parent.Parent.Parent
+        end
+    end)
 
 box:AddToggle("AntiSticky", {
     Text = "Anti Sticky",
@@ -2594,6 +2879,97 @@ box:AddButton("Teleportes House", function()
 end)
 
 end
+local box = Tabs.Defence:AddRightGroupbox("Fun")
+box:AddToggle("COCONUT PENIS",{
+    Text = "Coconut Penis",
+    Default = false,
+    Callback = function(Value)
+        _G.En = Value
+        
+        if Value then
+            task.spawn(function()
+                local Me = game.Players.LocalPlayer
+                local RunService = game:GetService("RunService")
+                local ReplicatedStorage = game:GetService("ReplicatedStorage")
+                
+                local SetNetworkOwner = ReplicatedStorage.GrabEvents.SetNetworkOwner
+                local SpawnToy = ReplicatedStorage.MenuToys.SpawnToyRemoteFunction
+                local DestroyToy = ReplicatedStorage.MenuToys.DestroyToy
+                
+                local Offsets = {
+                    [1] = CFrame.new(-0.45, -1.2, -0.7),
+                    [2] = CFrame.new(0.45, -1.2, -0.7),
+                    [3] = CFrame.new(0, -1, 0.8)
+                }
+                
+                local Length = 15
+                local Coconuts = {}
+                
+                while _G.En do
+                    local Char = Me.Character
+                    local Root = Char and Char:FindFirstChild("HumanoidRootPart")
+                    
+                    if not Root then 
+                        task.wait(0.1)
+                        continue 
+                    end
+                    
+                    Coconuts = {}
+                    for _, toy in pairs(workspace[Me.Name.."SpawnedInToys"]:GetChildren()) do
+                        if toy.Name == "FoodCoconut" then
+                            table.insert(Coconuts, toy)
+                        end
+                    end
+                    
+                    if #Coconuts < (Length + 2) then
+                        task.spawn(function()
+                            SpawnToy:InvokeServer("FoodCoconut", Root.CFrame * CFrame.new(-5, 0, 10), Vector3.zero)
+                        end)
+                    end
+                    
+                    for i, Coco in ipairs(Coconuts) do
+                        local Part = Coco:FindFirstChild("SoundPart")
+                        local HoldPart = Coco:FindFirstChild("HoldPart")
+                        local Rigid = HoldPart and HoldPart:FindFirstChild("RigidConstraint")
+                        local PartOwner = Part and Part:FindFirstChild("PartOwner")
+                        
+                        if Part and HoldPart and Rigid then
+                            if PartOwner and PartOwner.Value == Me.Name then
+                                if i <= 2 then
+                                    Part.CFrame = Root.CFrame * Offsets[i] * CFrame.new(Root.Velocity / 100)
+                                else
+                                    Part.CFrame = Root.CFrame * Offsets[3] * CFrame.new(Root.Velocity / 100) * CFrame.new(0, 0, Offsets[3].Z - (i + 0.2))
+                                end
+                                Part.Velocity = Vector3.zero
+                            end
+                            
+                            if not PartOwner or PartOwner.Value ~= Me.Name then
+                                SetNetworkOwner:FireServer(Part, Part.CFrame)
+                            end
+                            
+                            if Rigid.Attachment1 then
+                                DestroyToy:FireServer(Coco)
+                            end
+                            
+                            for _, part in pairs(Coco:GetChildren()) do
+                                if part:IsA("BasePart") then
+                                    part.CanCollide = false
+                                    part.CanQuery = false
+                                    if part.Transparency ~= 1 then
+                                        part.Transparency = 0
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    
+                    task.wait(0.01)
+                end
+            end)
+        end
+    end
+})
+
 
 do
 
@@ -3068,13 +3444,20 @@ box:AddLabel("Add To Target List"):AddKeyPicker("AddToTargetList", {
 
 box:AddButton("Break Barrier", function()
     local pos = HRP.CFrame
-    local t = tick()
-    local burg = inv:FindFirstChild("FoodHamburger") or spawntoy("FoodHamburger", HRP.CFrame * CFrame.new(5,5,20))
+    local burg = inv:FindFirstChild("FoodHamburger") or spawntoy("FoodHamburger", HRP.CFrame * CFrame.new(5, 5, 20))
+    
     task.wait(0.1)
     grab(burg)
-    HRP.CFrame = workspace.Waypoints.TudorHouse.CFrame
-    task.wait(0.05)
+    
+    -- Teleporte para a posição que você pediu
+    HRP.CFrame = CFrame.new(258.65, -7.35, 439.35)
+    
+    task.wait(0.25)  -- Aumentado um pouco para dar tempo do glitch funcionar
+    
     DestroyToy:FireServer(burg)
+    
+    -- Volta para a posição original
+    task.wait(0.1)
     HRP.CFrame = pos
 end)
 
@@ -3654,10 +4037,10 @@ box:AddToggle("ApplyMethodGrab", {
                                 end
                                 task.spawn(function()
                                     if Toggles.EnableRagdoll.Value and PalletForRagdoll and inv:FindFirstChild("PalletForRagdoll") then
-                                        PalletForRagdoll.SoundPart.AssemblyLinearVelocity = Vector3.new(0, 2100, 0)
+                                        PalletForRagdoll.SoundPart.AssemblyLinearVelocity = Vector3.new(0, 2000, 0)
                                         PalletForRagdoll.SoundPart.CFrame = Sets.HRP.CFrame
                                         task.wait(0.0)
-                                        PalletForRagdoll.SoundPart.CFrame = HRP.CFrame * CFrame.new(0, 2000, 0)
+                                        PalletForRagdoll.SoundPart.CFrame = HRP.CFrame * CFrame.new(0, 2100, 0)
                                     end
                                 end)
                                 if not kickbp or kickbp.Parent ~= Sets.HRP then
@@ -3774,6 +4157,8 @@ box:AddToggle("ApplyMethodGrab", {
         end
     end
 })
+
+
 box:AddToggle("LoopKickBlob", {
     Text = "Loop Kick (Grab + Blob)",
     Default = false,
@@ -3875,14 +4260,14 @@ box:AddToggle("LoopKickBlob", {
 
                 if rootAlvo and humAlvo and humAlvo.Health > 0 then
                     -- Aproximação mais próxima e direta
-                    blobRoot.CFrame = rootAlvo.CFrame * CFrame.new(0, 0.3, -0.8)
+                    blobRoot.CFrame = rootAlvo.CFrame * CFrame.new(0, 0.3, -0.5) -- Mais perto ainda
                     
                     pcall(function()
                         if soldaFixa then CriarGrab:FireServer(DetectorDireito, rootAlvo, soldaFixa) end
                         DestroyLine:FireServer(rootAlvo)
                     end)
                 end
-                task.wait(0.02)
+                task.wait(0.005) -- ✅ Muito mais rápido que antes
             end
 
             -- VOLTA O BLOBMAN E DEIXA PARADO PARA SEMPRE
@@ -3890,9 +4275,9 @@ box:AddToggle("LoopKickBlob", {
             blobRoot.Velocity = Vector3.zero
             blobRoot.RotVelocity = Vector3.zero
 
-            -- ETAPA 2: LOOP PRINCIPAL - CHUTE ALTO + PEGADA RÁPIDA + VOCÊ SEGURO
+            -- ETAPA 2: LOOP PRINCIPAL - CHUTE + PEGADA EXTREMAMENTE RÁPIDA
             local ultimoTempo = 0
-            local intervalo = 0.06 -- 2x mais rápido
+            local intervalo = 0.015 -- ✅ 4x mais rápido que o original
 
             while Toggles.LoopKickBlob.Value do
                 local tempoAtual = tick()
@@ -3909,20 +4294,20 @@ box:AddToggle("LoopKickBlob", {
 
                 if not rootAlvo or not humAlvo or humAlvo.Health <= 0 then break end
 
-                -- LÓGICA OTIMIZADA - ALTURA MÁXIMA + PEGADA RÁPIDA
+                -- LÓGICA OTIMIZADA - ALTURA MÁXIMA + PEGADA INSTANTÂNEA
                 pcall(function()
                     humAlvo.PlatformStand = true
 
-                    -- 🚀 CHUTE BEM ALTO
-                    rootAlvo.CFrame = posicaoOriginal * CFrame.new(math.random(-1,1), 45, 2.5)
-                    rootAlvo.Velocity = Vector3.new(0, 65, math.random(12,20))
+                    -- 🚀 CHUTE MUITO MAIS FORTE E ALTO
+                    rootAlvo.CFrame = posicaoOriginal * CFrame.new(math.random(-1,1), 60, 3)
+                    rootAlvo.Velocity = Vector3.new(0, 85, math.random(18,28)) -- ✅ Velocidade máxima
 
                     DestroyLine:FireServer(rootAlvo)
                     
-                    -- ⚡ SOLTA E PEGA QUASE INSTANTÂNEO
+                    -- ⚡ SOLTA E PEGA QUASE SEM INTERVALO
                     if soldaFixa then
                         CriarDrop:FireServer(soldaFixa)
-                        task.wait(0.005)
+                        task.wait(0.001) -- ✅ Quase sem espera
                         CriarGrab:FireServer(DetectorDireito, rootAlvo, soldaFixa)
                     end
                 end)
@@ -4252,6 +4637,376 @@ box:AddSlider("BlobDelay", {
 end
 
 
+local box = Tabs.Target:AddRightGroupbox("Black Hole")
+
+local Enabled = false
+local SelectedStyle = "Realistic"
+local Connection
+
+local function applyRealisticBH(hole)
+    if hole:FindFirstChild("RealisticBH") then return end
+
+    local ok, assets = pcall(function()
+        return game:GetObjects("rbxassetid://16797584940")
+    end)
+
+    if not ok or not assets[1] then return end
+
+    local folder = Instance.new("Folder")
+    folder.Name = "RealisticBH"
+    folder.Parent = hole
+
+    for _, obj in ipairs(assets[1]:GetDescendants()) do
+        if obj:IsA("ParticleEmitter")
+        or obj:IsA("Beam")
+        or obj:IsA("Trail")
+        or obj:IsA("PointLight")
+        or obj:IsA("Sound") then
+            obj:Clone().Parent = hole
+        end
+    end
+end
+
+local RunService = game:GetService("RunService")
+
+local function applyGalaxyBH(hole)
+	local pos = hole.Position
+
+	local folder = Instance.new("Folder")
+	folder.Name = "GalaxyBH"
+	folder.Parent = workspace
+
+	-- 🌑 NÚCLEO
+	local core = Instance.new("Part")
+	core.Shape = Enum.PartType.Ball
+	core.Size = Vector3.new(10,10,10)
+	core.Anchored = true
+	core.CanCollide = false
+	core.Material = Enum.Material.Neon
+	core.Color = Color3.fromRGB(0,0,0)
+	core.Position = pos
+	core.Parent = folder
+
+	local coreLight = Instance.new("PointLight")
+	coreLight.Color = Color3.fromRGB(190, 90, 255)
+	coreLight.Brightness = 12
+	coreLight.Range = 45
+	coreLight.Parent = core
+
+	-- 🔊 SOM CINEMÁTICO
+	local sound = Instance.new("Sound")
+	sound.Name = "BlackHoleSound"
+	sound.SoundId = "rbxassetid://1843529633" -- ambience sci-fi
+	sound.Volume = 0.2
+	sound.Looped = true
+	sound.RollOffMaxDistance = 250
+	sound.EmitterSize = 40
+	sound.Parent = core
+	sound:Play()
+
+	-- 🌈 PALETA GALÁXIA
+	local palette = {
+		Color3.fromRGB(170, 90, 255),
+		Color3.fromRGB(90, 180, 255),
+		Color3.fromRGB(255, 90, 200),
+		Color3.fromRGB(120, 255, 230),
+		Color3.fromRGB(255, 255, 255)
+	}
+
+	local stars = {}
+
+	local arms = 5
+	local perArm = 180
+	local radius = 110
+
+	-- 🌌 BRAÇOS ESPIRAIS
+	for arm = 1, arms do
+		for i = 1, perArm do
+			local t = i / perArm
+
+			local spiral = t * math.pi * 7
+			local angle = spiral + (arm * (math.pi * 2 / arms))
+
+			local jitter = math.random(-10,10) * 0.15
+			local r = t * radius + jitter
+
+			local height = math.noise(i * 0.1, arm) * 6
+
+			local star = Instance.new("Part")
+			star.Shape = Enum.PartType.Ball
+			star.Size = Vector3.new(0.2,0.2,0.2) * (math.random(5,12)/10)
+			star.Anchored = true
+			star.CanCollide = false
+			star.Material = Enum.Material.Neon
+			star.Color = palette[math.random(1,#palette)]
+			star.Position = pos
+			star.Parent = folder
+
+			table.insert(stars, {
+				part = star,
+				angle = angle,
+				radius = r,
+				height = height,
+				speed = math.random(30,80)/1000
+			})
+		end
+	end
+
+	-- 🌫️ ANEL DE ACRESÇÃO
+	local rings = {}
+	for i = 1, 80 do
+		local ring = Instance.new("Part")
+		ring.Shape = Enum.PartType.Ball
+		ring.Size = Vector3.new(0.3,0.3,0.3)
+		ring.Anchored = true
+		ring.CanCollide = false
+		ring.Material = Enum.Material.Neon
+		ring.Color = Color3.fromRGB(255, 170, 255)
+		ring.Transparency = 0.3
+		ring.Parent = folder
+
+		table.insert(rings, {
+			part = ring,
+			angle = math.random() * math.pi * 2,
+			radius = math.random(18, 35),
+			speed = math.random(40,120)/1000
+		})
+	end
+
+	-- ✨ PARTICULAS CENTRAIS
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	emitter.Rate = 600
+	emitter.Speed = NumberRange.new(1, 6)
+	emitter.Lifetime = NumberRange.new(1, 2.5)
+	emitter.LightEmission = 1
+	emitter.SpreadAngle = Vector2.new(360,360)
+	emitter.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.4),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	emitter.Parent = core
+
+	-- ⏱️ LOOP
+	local start = tick()
+
+	local conn
+	conn = RunService.Heartbeat:Connect(function()
+		local time = tick() - start
+
+		if time > 5 then
+			conn:Disconnect()
+			folder:Destroy()
+			return
+		end
+
+		-- 💥 núcleo pulsando
+		local pulse = 1 + math.sin(time * 10) * 0.25
+		core.Size = Vector3.new(10,10,10) * pulse
+
+		coreLight.Brightness = 10 + math.sin(time * 8) * 3
+
+		-- 🔊 SOM DINÂMICO (ISSO AQUI É O QUE DEIXA CINEMÁTICO)
+		local intensity = 0.5 + math.sin(time * 2) * 0.5
+		sound.Volume = 0.2 + intensity * 0.7
+		sound.PlaybackSpeed = 0.85 + intensity * 0.35
+
+		-- 🌌 estrelas orbitando
+		for _, s in ipairs(stars) do
+			s.angle += s.speed
+
+			local spin = time * 0.8
+			local x = math.cos(s.angle + spin) * s.radius
+			local z = math.sin(s.angle + spin) * s.radius
+			local y = s.height + math.sin(time * 2 + s.radius) * 2
+
+			local pull = math.clamp(1 - (s.radius / radius), 0, 1)
+
+			s.part.Position = pos + Vector3.new(x,y,z) * Vector3.new(1 - pull*0.2,1,1 - pull*0.2)
+		end
+
+		-- 🌫️ anel girando
+		for _, r in ipairs(rings) do
+			r.angle += r.speed
+
+			local x = math.cos(r.angle + time * 2) * r.radius
+			local z = math.sin(r.angle + time * 2) * r.radius
+
+			r.part.Position = pos + Vector3.new(x, math.sin(time*3)*0.5, z)
+		end
+	end)
+end
+
+
+local function applyVoidBH(hole)
+    if hole:FindFirstChild("VoidBH") then return end
+
+    local folder = Instance.new("Folder")
+    folder.Name = "VoidBH"
+    folder.Parent = hole
+
+
+    local smoke = Instance.new("ParticleEmitter")
+    smoke.Texture = "rbxasset://textures/particles/smoke_main.dds"
+    smoke.Color = ColorSequence.new(Color3.fromRGB(80,0,120))
+    smoke.Rate = 200
+    smoke.Speed = NumberRange.new(1,4)
+    smoke.Size = NumberSequence.new(10)
+    smoke.Lifetime = NumberRange.new(3,6)
+    smoke.Parent = hole
+end
+
+local RunService = game:GetService("RunService")
+
+local function applyTimeBH(hole)
+	if not hole or not hole:IsA("BasePart") then return end
+	if hole:FindFirstChild("TimeBH") then return end
+
+	local folder = Instance.new("Folder")
+	folder.Name = "TimeBH"
+	folder.Parent = hole
+
+	-- 💡 LUZ SUAVE (BRILHO CONTROLADO)
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(210, 180, 140)
+	light.Brightness = 2.5
+	light.Range = 18
+	light.Parent = hole
+
+	-- 🌫️ POEIRA TEMPORAL BRILHANTE (MAS NÃO ESTOURADA)
+	local particles = Instance.new("ParticleEmitter")
+	particles.Texture = "rbxasset://textures/particles/sparkles_main.dds"
+	particles.Color = ColorSequence.new(
+		Color3.fromRGB(230, 210, 170),
+		Color3.fromRGB(120, 100, 80)
+	)
+	particles.LightEmission = 0.4 -- brilho leve (IMPORTANTE)
+	particles.Rate = 160
+	particles.Speed = NumberRange.new(1, 3)
+	particles.Lifetime = NumberRange.new(2.5, 4)
+
+	particles.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.9),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+
+	particles.SpreadAngle = Vector2.new(180, 180)
+	particles.Rotation = NumberRange.new(0, 360)
+	particles.RotSpeed = NumberRange.new(-40, 40)
+	particles.Parent = hole
+
+	-- 🌟 ORBES BRILHANTES (EFEITO “ENERGIA PRESA NO TEMPO”)
+	local orbs = {}
+
+	for i = 1, 16 do
+		local orb = Instance.new("Part")
+		orb.Shape = Enum.PartType.Ball
+		orb.Size = Vector3.new(0.25,0.25,0.25)
+		orb.Anchored = true
+		orb.CanCollide = false
+		orb.Material = Enum.Material.Neon
+		orb.Color = Color3.fromRGB(240, 210, 160)
+		orb.Transparency = 0.15
+		orb.Parent = folder
+
+		local glow = Instance.new("PointLight")
+		glow.Color = orb.Color
+		glow.Brightness = 1.5
+		glow.Range = 6
+		glow.Parent = orb
+
+		table.insert(orbs, {
+			part = orb,
+			angle = math.random() * math.pi * 2,
+			radius = math.random(5, 12),
+			speed = math.random(20, 60)/1000
+		})
+	end
+
+	-- ⏱️ LOOP
+	local start = tick()
+
+	local conn
+	conn = RunService.Heartbeat:Connect(function()
+		if not hole or not hole.Parent then
+			conn:Disconnect()
+			folder:Destroy()
+			return
+		end
+
+		local t = tick() - start
+		local pos = hole.Position
+
+		-- 🌟 brilho pulsante leve (não estoura)
+		local pulse = 1 + math.sin(t * 2) * 0.1
+		light.Brightness = 2 + math.sin(t * 3) * 0.8
+		particles.Speed = NumberRange.new(1, 3 * pulse)
+
+		-- 🌪️ órbita dos orbes brilhantes
+		for _, o in ipairs(orbs) do
+			o.angle += o.speed
+
+			local x = math.cos(o.angle + t) * o.radius
+			local z = math.sin(o.angle + t) * o.radius
+			local y = math.sin(t * 2 + o.radius) * 0.3
+
+			o.part.Position = pos + Vector3.new(x, y, z)
+		end
+	end)
+end
+
+box:AddDropdown("BHStyle", {
+    Text = "Black Hole Style",
+    Values = {
+        "Realistic",
+        "Galaxy",
+        "Void",
+        "Time"
+    },
+    Default = 1,
+    Multi = false,
+    Callback = function(v)
+        SelectedStyle = v
+    end
+})
+
+box:AddToggle("CustomBH", {
+    Text = "Enable",
+    Default = false,
+    Callback = function(v)
+        Enabled = v
+
+        if Connection then
+            Connection:Disconnect()
+            Connection = nil
+        end
+
+        if not v then return end
+
+        Connection = workspace.DescendantAdded:Connect(function(obj)
+            if not Enabled then return end
+
+            if obj.Name == "Hole" and obj:IsA("BasePart") then
+                task.wait(0.1)
+
+                if SelectedStyle == "Realistic" then
+                    applyRealisticBH(obj)
+
+                elseif SelectedStyle == "Galaxy" then
+                    applyGalaxyBH(obj)
+
+                elseif SelectedStyle == "Void" then
+                    applyVoidBH(obj)
+
+                elseif SelectedStyle == "Time" then
+                    applyTimeBH(obj)
+                end
+            end
+        end)
+    end
+})
+
+
 
 do
 local box = Tabs.Main:AddRightGroupbox("Lags")
@@ -4370,6 +5125,11 @@ box:AddToggle("PacketLag", {
         end
     end
 })
+
+
+
+
+
 
 
 box:AddToggle("AutoStop", {
@@ -4705,6 +5465,28 @@ game:GetService("ContextActionService"):BindActionAtPriority(
     2000,
     Enum.KeyCode.K
 )
+local UserInputService = game:GetService("UserInputService")
+
+local autoClick = false
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+
+    if input.KeyCode == Enum.KeyCode.F then
+        autoClick = not autoClick
+        print("AutoClick:", autoClick)
+    end
+end)
+
+task.spawn(function()
+    while task.wait(0.001) do
+        if autoClick then
+            pcall(function()
+                mouse1click()
+            end)
+        end
+    end
+end)
 
 
 box:AddLabel("Destroy Limbs", false)
@@ -5264,7 +6046,7 @@ end
 
 local activepackets = false
 rs.GrabEvents.ExtendGrabLine.OnClientEvent:Connect(function(player, args)
-    if typeof(args) == "string" and string.len(args) > 70000 and not activepackets then
+    if typeof(args) == "string" and string.len(args) > 9000000 and not activepackets then
         activepackets = true
         local function GetSizeMB(StringLength)
             return StringLength / (1024 * 1024)
@@ -5272,11 +6054,11 @@ rs.GrabEvents.ExtendGrabLine.OnClientEvent:Connect(function(player, args)
         local SizeRounded = math.round(GetSizeMB(string.len(args)) * 1000) / 1000 
 Library:Notify({
     Title = "VTX_Hub",
-    Description = "PACKET DETECTED\nSource: " ..player.Name ..  tostring(arg1):sub(1, 20) .. "\nSize: " .. tostring(SizeRounded) .. " MB",
+    Description = "PACKET DETECTED\nSource: " ..player.Name ..  tostring(arg1):sub(1, 30) .. "\nSize: " .. tostring(SizeRounded) .. " MB",
     Time = 3,
     Icon = "rbxassetid://127990091575711"
 })
-        task.wait(4)
+        task.wait(2)
         activepackets = false
     end
 end)
